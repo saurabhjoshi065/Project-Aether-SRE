@@ -1,83 +1,45 @@
 # 🏗️ Project Aether-SRE
 
-**Objective:** Build a self-healing, local-first SRE agent that monitors, diagnoses, and repairs a Docker-based microservice cluster using a local LLM (Ollama).
+**Objective:** A self-healing, local-first SRE agent that monitors, diagnoses, and repairs a Docker-based microservice cluster using an autonomous reasoning engine.
 
-## 🚀 Modules
+## 🚀 System Architecture
 
-### Module 1: The "Target & Trigger" (Infrastructure)
-- **Chaos Service:** A Python app designed to fail (Memory Leaks, Crashes).
-- **Prometheus:** Metrics collection.
-- **Alertmanager:** Alert routing.
-- **Docker Compose:** Orchestration.
+### 1. Monitoring Stack (The Eyes)
+- **Prometheus:** Scrapes real-time metrics from services.
+- **Alertmanager:** Routes firing alerts to the Agent Service.
+- **Context Enrichment:** The agent automatically fetches container logs and resource metrics to provide deep diagnostic context.
 
-### Module 2: The "Ear" (Agent Service)
-- **FastAPI Webhook:** Receives alerts from Alertmanager.
-- **Pydantic Validation:** Ensures alert data integrity.
-- **Structured Logging:** Prepares alert context for the LLM.
+### 2. Autonomous Agent (The Brain)
+- **FastAPI Webhook:** Receives and validates incoming alerts.
+- **Reasoning Engine:** Uses a ReAct (Reason + Act) loop to autonomously decide which tools to use for diagnosis.
+- **LLM Integration:** Powered by Ollama (local-first) to analyze symptoms and recommend actions.
 
-### Module 3: The "Brain" (Agent Service)
-- **LangChain & Ollama:** Integrates with a local LLM for diagnosis.
-- **Prompt Engineering:** Uses a system prompt to get structured JSON diagnoses.
-- **Async & Fallback:** Ensures non-blocking operation and graceful degradation.
+### 3. Self-Healing (The Hands)
+- **Repair Engine:** Directly interacts with the Docker daemon to perform remediation.
+- **Automated Actions:** Capable of autonomously restarting services, clearing caches, or resetting environments based on diagnostic findings.
 
-## 🛠️ Setup
+## 🛠️ Setup & Usage
 
 1.  **Prerequisites:**
     *   Docker Desktop
-    *   Python 3.11+
-    *   Ollama running with a model (e.g., `llama2`)
+    *   Ollama (running `qwen2.5-coder:7b` or similar)
 
-2.  **Installation:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-3.  **Run the service:**
-    ```bash
-    uvicorn main:app --reload
-    ```
-    The service will be available at `http://localhost:8000`.
-
-4.  **Run the infrastructure stack:**
+2.  **Spin up the Stack:**
     ```bash
     docker-compose up --build -d
     ```
 
-5.  **Trigger a failure:**
+3.  **Trigger a Failure (Stress Test):**
     ```bash
     curl -X POST http://localhost:8080/stress
     ```
 
-## 📝 Usage
+4.  **Monitor the Agent:**
+    Watch the agent reason and repair the system in real-time:
+    ```bash
+    docker logs -f agent-service
+    ```
 
-To send a test alert to the service, you can use `curl`:
+## 📊 Outputs
 
-```bash
-curl -X POST http://localhost:8000/v1/alerts -H "Content-Type: application/json" -d @- << EOF
-{
-  "version": "4",
-  "groupKey": "test",
-  "status": "firing",
-  "receiver": "test",
-  "groupLabels": {},
-  "commonLabels": {},
-  "commonAnnotations": {},
-  "externalURL": "http://alertmanager.example.com",
-  "alerts": [
-    {
-      "status": "firing",
-      "labels": {
-        "alertname": "TestAlert"
-      },
-      "annotations": {
-        "summary": "This is a test alert."
-      },
-      "startsAt": "2024-01-01T00:00:00Z",
-      "endsAt": "2024-01-01T01:00:00Z",
-      "generatorURL": "http://prometheus.example.com",
-      "fingerprint": "test"
-    }
-  ]
-}
-EOF
-```
+For detailed examples of the agent's reasoning chains and JSON diagnoses, see [outputs.md](./outputs.md).
