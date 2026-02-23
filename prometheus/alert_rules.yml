@@ -1,0 +1,20 @@
+groups:
+  - name: chaos_rules
+    rules:
+      - alert: ChaosServiceDown
+        expr: up{job="chaos-app"} == 0
+        for: 5s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Chaos Service is down on {{ $labels.instance }}"
+          description: "The Chaos Service container is not responding."
+
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes{container_name="chaos-app"} > 100000000
+        for: 5s
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Memory Usage on {{ $labels.instance }}"
+          description: "Chaos App is using more than 100MB of memory."
