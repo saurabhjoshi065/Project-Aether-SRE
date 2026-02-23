@@ -1,10 +1,13 @@
+import json
 from fastapi import FastAPI, Response, status
 from schemas import AlertmanagerWebhook
 import structlog
 from llm import get_llm
 from prompts import SYSTEM_PROMPT
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from tools import restart_service, get_service_logs, get_service_metrics
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain import hub
+from langchain_core.prompts import PromptTemplate
 
 # Configure structured logging
 structlog.configure(
@@ -22,47 +25,81 @@ logger = structlog.get_logger()
 
 app = FastAPI(
     title="Project Aether - Agent Service",
-    description="Receives alerts from Prometheus and uses an LLM to diagnose them.",
-    version="0.1.0",
+    description="An autonomous SRE Agent that diagnoses and repairs infrastructure.",
+    version="1.0.0",
 )
 
+# Initialize LLM and Tools
 llm = get_llm()
+tools = [restart_service, get_service_logs, get_service_metrics]
 
-prompt_template = ChatPromptTemplate.from_messages(
-    [
-        ("system", SYSTEM_PROMPT),
-        ("human", "{alert_summary}"),
-    ]
+# Define the ReAct prompt template
+template = """You are a senior Site Reliability Engineer (SRE). Your goal is to diagnose and resolve alerts.
+You have access to the following tools:
+
+{tools}
+
+Use the following format:
+
+Question: the input alert you must diagnose
+Thought: you should always think about what to do
+Action: the action to take, should be one of [{tool_names}]
+Action Input: the input to the action (usually the container name)
+Observation: the result of the action
+... (this Thought/Action/Action Input/Observation can repeat N times)
+Thought: I now know the final answer
+Final Answer: A JSON object with the diagnosis and any actions taken.
+{{
+  "summary": "...",
+  "root_cause": "...",
+  "impact": "...",
+  "recommendations": "...",
+  "action_taken": "..."
+}}
+
+Begin!
+
+Question: {input}
+Thought: {agent_scratchpad}"""
+
+prompt = PromptTemplate.from_template(template)
+
+# Create the Agent
+agent = create_react_agent(llm, tools, prompt)
+agent_executor = AgentExecutor(
+    agent=agent, 
+    tools=tools, 
+    verbose=True, 
+    handle_parsing_errors=True,
+    max_iterations=5,
+    max_execution_time=120 # Timeout after 120 seconds
 )
-
-chain = prompt_template | llm | StrOutputParser()
-
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the Agent Service"}
+    return {"message": "Project Aether Agentic SRE is Active"}
 
 
 @app.post("/v1/alerts", status_code=status.HTTP_202_ACCEPTED)
 async def post_alerts(payload: AlertmanagerWebhook):
     """
-    Receives alerts from Prometheus Alertmanager.
+    Receives alerts and triggers an autonomous reasoning loop.
     """
     await logger.ainfo("Received alert payload", alert=payload.model_dump())
     
-    # For now, just use the first alert
     if payload.alerts:
         alert = payload.alerts[0]
-        alert_summary = alert.annotations.get('summary', '')
+        alert_summary = alert.annotations.get('summary', 'No summary provided')
+        container = alert.labels.get('job', 'unknown')
         
-        if not alert_summary:
-            await logger.awarning("Alert summary missing, skipping LLM diagnosis")
-            return {"status": "skipped_no_summary"}
+        input_msg = f"Alert: {alert_summary}. Target: {container}."
         
         try:
-            response = await chain.ainvoke({"alert_summary": alert_summary})
-            await logger.ainfo("LLM response", response=response)
+            await logger.ainfo("Starting agentic reasoning loop", input=input_msg)
+            # Agents in LangChain 0.1+ are invoked with invoke()
+            result = await agent_executor.ainvoke({"input": input_msg})
+            await logger.ainfo("Agent reasoning complete", result=result)
         except Exception as e:
-            await logger.aerror("LLM invocation failed", error=str(e))
+            await logger.aerror("Agent execution failed", error=str(e))
 
     return {"status": "success"}
